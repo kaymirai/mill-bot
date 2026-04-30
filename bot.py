@@ -100,7 +100,7 @@ def generate_ai_response(channel_id: int, user_name: str, question: str) -> str:
         response = client.chat.completions.create(
             model="gpt-5.4-mini",
             messages=messages,
-            max_tokens=500,
+            max_completion_tokens=500,
             temperature=0.7
         )
         answer = response.choices[0].message.content
