@@ -130,11 +130,16 @@ async def on_message(message: discord.Message):
         await bot.process_commands(message)
         return
 
-    # 特定のチャンネルのみで動作させる
-    if message.channel.name != HELP_CHANNEL_NAME:
+    # 応答する条件：
+    # 1. 指定された専用チャンネル（プロンプト等）での発言
+    # 2. Botに対するメンションが含まれている場合
+    is_help_channel = (message.channel.name == HELP_CHANNEL_NAME)
+    is_mentioned = bot.user.mentioned_in(message)
+
+    if not (is_help_channel or is_mentioned):
         return
 
-    print(f"Processing message in #{message.channel.name} from {message.author}")
+    print(f"Processing message in #{message.channel.name} from {message.author} (Mentioned: {is_mentioned})")
 
     # 1. FAQから回答を検索
     faq_answer = find_faq_answer(message.content)
