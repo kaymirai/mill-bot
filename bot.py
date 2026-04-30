@@ -112,7 +112,7 @@ def generate_ai_response(channel_id: int, user_name: str, question: str) -> str:
         return answer
     except Exception as e:
         print(f"CRITICAL: OpenAI API Error: {type(e).__name__}: {e}")
-        return "申し訳ありません。AI回答の生成中にエラーが発生しました。運営までお問い合わせください。"
+        return "むにゃむにゃ... ちょっと頭がまわらないでちゅ。あとでまた呼んでくだしゃい...💤"
 
 @bot.event
 async def on_ready():
