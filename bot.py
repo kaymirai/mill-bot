@@ -13,6 +13,8 @@ DISCORD_TOKEN = os.getenv('DISCORD_TOKEN')
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
 HELP_CHANNEL_NAME = os.getenv('HELP_CHANNEL_NAME', 'help')
 
+LOG_CHANNEL_NAME = os.getenv('LOG_CHANNEL_NAME', '質問ログ')
+
 # Intents設定
 intents = discord.Intents.default()
 intents.message_content = True
@@ -23,6 +25,7 @@ client = OpenAI(api_key=OPENAI_API_KEY)
 
 # FAQデータの読み込みと保存
 FAQ_FILE = "faq.json"
+# ... (load_faq, save_faq, FAQ_DB remain same)
 
 def load_faq():
     if os.path.exists(FAQ_FILE):
@@ -122,6 +125,17 @@ async def add_faq(ctx, keyword: str, *, answer: str):
     save_faq(FAQ_DB)
     await ctx.send(f"💡 **FAQを覚えたでちゅ！**\nキーワード: `{keyword}`\n回答: `{answer}`\n（むにゃ...おやすみ...💤）")
 
+async def log_question(author, channel, content):
+    """質問内容を専用のログチャンネルに送信する"""
+    log_channel = discord.utils.get(bot.get_all_channels(), name=LOG_CHANNEL_NAME)
+    if log_channel:
+        embed = discord.Embed(title="📝 新しい質問を受信", color=discord.Color.blue())
+        embed.add_field(name="ユーザー", value=author, inline=True)
+        embed.add_field(name="チャンネル", value=f"#{channel}", inline=True)
+        embed.add_field(name="内容", value=content, inline=False)
+        embed.set_footer(text=f"Time: {discord.utils.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC")
+        await log_channel.send(embed=embed)
+
 @bot.event
 async def on_message(message: discord.Message):
     """メッセージ受信時の処理"""
@@ -135,7 +149,7 @@ async def on_message(message: discord.Message):
         return
 
     # 応答する条件：
-    # 1. 指定された専用チャンネル（プロンプト等）での発言
+    # 1. 指定された専用チャンネル（質問、相談等）での発言
     # 2. Botに対するメンションが含まれている場合
     is_help_channel = (message.channel.name == HELP_CHANNEL_NAME)
     is_mentioned = bot.user.mentioned_in(message)
@@ -144,6 +158,9 @@ async def on_message(message: discord.Message):
         return
 
     print(f"Processing message in #{message.channel.name} from {message.author} (Mentioned: {is_mentioned})")
+
+    # 質問をログに記録
+    await log_question(message.author.display_name, message.channel.name, message.content)
 
     # 1. FAQから回答を検索
     faq_answer = find_faq_answer(message.content)
