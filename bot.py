@@ -118,7 +118,11 @@ def generate_ai_response(channel_id: int, user_name: str, question: str) -> str:
 async def on_ready():
     """Bot起動時の処理"""
     print(f'Logged in as {bot.user} (ID: {bot.user.id})')
+    print(f'--- Configuration ---')
+    print(f'HELP_CHANNEL_NAME: "{HELP_CHANNEL_NAME}"')
+    print(f'LOG_CHANNEL_NAME: "{LOG_CHANNEL_NAME}"')
     print(f'Memory initialized for {len(channel_histories)} channels.')
+    print('----------------------')
 
 @bot.command(name="addfaq")
 async def add_faq(ctx, keyword: str, *, answer: str):
@@ -130,14 +134,19 @@ async def add_faq(ctx, keyword: str, *, answer: str):
 
 async def log_question(author, channel, content):
     """質問内容を専用のログチャンネルに送信する"""
-    log_channel = discord.utils.get(bot.get_all_channels(), name=LOG_CHANNEL_NAME)
-    if log_channel:
-        embed = discord.Embed(title="📝 新しい質問を受信", color=discord.Color.blue())
-        embed.add_field(name="ユーザー", value=author, inline=True)
-        embed.add_field(name="チャンネル", value=f"#{channel}", inline=True)
-        embed.add_field(name="内容", value=content, inline=False)
-        embed.set_footer(text=f"Time: {discord.utils.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC")
-        await log_channel.send(embed=embed)
+    try:
+        log_channel = discord.utils.get(bot.get_all_channels(), name=LOG_CHANNEL_NAME)
+        if log_channel:
+            embed = discord.Embed(title="📝 新しい質問を受信", color=discord.Color.blue())
+            embed.add_field(name="ユーザー", value=author, inline=True)
+            embed.add_field(name="チャンネル", value=f"#{channel}", inline=True)
+            embed.add_field(name="内容", value=content, inline=False)
+            embed.set_footer(text=f"Time: {discord.utils.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC")
+            await log_channel.send(embed=embed)
+        else:
+            print(f"DEBUG: Log channel '{LOG_CHANNEL_NAME}' not found.")
+    except Exception as e:
+        print(f"DEBUG: Error in log_question: {e}")
 
 @bot.event
 async def on_message(message: discord.Message):
@@ -146,21 +155,23 @@ async def on_message(message: discord.Message):
     if message.author == bot.user:
         return
 
+    print(f"DEBUG: Received message from {message.author} in #{message.channel.name}")
+
     # コマンドの処理（!addfaq 等を優先）
     if message.content.startswith('!'):
+        print(f"DEBUG: Processing command: {message.content}")
         await bot.process_commands(message)
         return
 
     # 応答する条件：
-    # 1. 指定された専用チャンネル（質問、相談等）での発言
-    # 2. Botに対するメンションが含まれている場合
     is_help_channel = (message.channel.name == HELP_CHANNEL_NAME)
     is_mentioned = bot.user.mentioned_in(message)
 
     if not (is_help_channel or is_mentioned):
+        print(f"DEBUG: Skipping message (Not help channel and not mentioned). Channel: {message.channel.name}, Expected: {HELP_CHANNEL_NAME}")
         return
 
-    print(f"Processing message in #{message.channel.name} from {message.author} (Mentioned: {is_mentioned})")
+    print(f"DEBUG: TRIGGERED! is_help_channel={is_help_channel}, is_mentioned={is_mentioned}")
 
     # 質問をログに記録
     await log_question(message.author.display_name, message.channel.name, message.content)
@@ -169,9 +180,10 @@ async def on_message(message: discord.Message):
     faq_answer = find_faq_answer(message.content)
     
     if faq_answer:
-        # FAQにマッチした場合は即座に返信
+        print(f"DEBUG: FAQ match found.")
         await message.reply(f"💡 **FAQ回答**:\n{faq_answer}")
     else:
+        print(f"DEBUG: No FAQ match. Calling OpenAI API...")
         # 2. FAQにない場合はAIで回答を生成
         async with message.channel.typing():
             ai_answer = generate_ai_response(message.channel.id, message.author.display_name, message.content)
