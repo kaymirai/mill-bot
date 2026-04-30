@@ -92,7 +92,7 @@ def generate_ai_response(channel_id: int, user_name: str, question: str) -> str:
 
     try:
         response = client.chat.completions.create(
-            model="gpt-4o",
+            model="gpt-5.5",
             messages=messages,
             max_tokens=500,
             temperature=0.7
