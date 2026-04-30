@@ -5,6 +5,7 @@ from discord.ext import commands
 from openai import OpenAI
 from dotenv import load_dotenv
 from collections import deque
+from duckduckgo_search import DDGS
 
 # .envファイルから環境変数を読み込む
 load_dotenv()
@@ -25,7 +26,6 @@ client = OpenAI(api_key=OPENAI_API_KEY)
 
 # FAQデータの読み込みと保存
 FAQ_FILE = "faq.json"
-# ... (load_faq, save_faq, FAQ_DB remain same)
 
 def load_faq():
     if os.path.exists(FAQ_FILE):
@@ -51,33 +51,43 @@ def find_faq_answer(question: str) -> str:
             return answer
     return None
 
+def search_web(query: str) -> str:
+    """最新の情報をWeb検索する"""
+    try:
+        print(f"DEBUG: Searching web for: {query}")
+        with DDGS() as ddgs:
+            results = list(ddgs.text(query, max_results=5))
+            if not results:
+                return "検索結果が見つかりませんでした。"
+            
+            formatted_results = []
+            for r in results:
+                formatted_results.append(f"Title: {r['title']}\nSnippet: {r['body']}\nSource: {r['href']}\n")
+            return "\n".join(formatted_results)
+    except Exception as e:
+        print(f"DEBUG: Search error: {e}")
+        return f"検索中にエラーが発生しました: {e}"
+
 def generate_ai_response(channel_id: int, user_name: str, question: str) -> str:
-    """OpenAI API を使用して、履歴と詳細設定を踏まえた回答を生成する"""
-    # 履歴の取得
+    """AIによる回答生成 (Web検索ツール付き)"""
     if channel_id not in channel_histories:
         channel_histories[channel_id] = deque(maxlen=10)
     
     history = list(channel_histories[channel_id])
     
-    # システムプロンプト
+    # システムプロンプトの設定
     messages = [
         {
             "role": "system",
             "content": (
                 "あなたの名前は『焙煎ミールくん』でちゅ。一人称は『ボク』でちゅ。50cmほどの超天才赤ちゃんでちゅ。"
-                f"今日は {discord.utils.utcnow().strftime('%Y年%m月%d日')} でちゅ。"
-                "【あなたの設定】"
-                "・超能力（瞬間移動、時間停止、物の移動など）が使える天才でちゅが、すぐ眠くなるでちゅ。"
-                "・ハイハイしかできないけど、自分を浮かせて移動（浮遊）することができるでちゅ。"
-                "・コーヒーミルクが大好きでちゅ。"
-                "・『焙煎豆太郎（おとうしゃん）』の息子で、『金太郎（にいしゃん）』の弟でちゅ。"
-                "・近所のお姉さんの『白梅（うめねえしゃん）』はやさしいから大好きでちゅ。"
+                f"今日は {discord.utils.utcnow().strftime('%Y年%m月%d日')} でちゅ。回答する際は、まず今日の日付を確認し、その2〜3ヶ月後が何月になるかを正確に逆算した上で、具体的なイベントを提案するでちゅ。"
                 "【専門知識・思考回路】"
                 "・あなたはプリントオンデマンド（POD）、Etsy、Printifyを活用した副業ビジネスの超エキスパートでちゅ。"
-                "・Etsyのアルゴリズムに乗るには2〜3ヶ月前の出品が鉄則であることを知っていまちゅ。そのため『今何を作ればいい？』と聞かれたら、今日の日付から2〜3ヶ月後（例：4月なら7〜8月）のアメリカの祝日やイベントを逆算して提案するでちゅ。"
+                "・Etsyのアルゴリズムに乗るには2〜3ヶ月前の出品が鉄則であることを知っていまちゅ。4月なら7〜8月、10月なら1〜2月のイベントを提案するでちゅ。"
+                "・必要があれば『search_web』ツールを使って、最新のトレンド、祝日、イベント、ニュース、AIツール情報を自分で調べて回答するでちゅ。"
                 "・売れない時のチェックポイントを熟知していまちゅ：①『自分が作りたいもの』ではなく『誰が欲しいか、プレゼントに使えるか』を意識しているか？ ②モックアップに『レビュー』『即納アイコン』『返品保証』が入っているか？ ③スマホで見た時にデザインが映えるか？"
                 "・『基本は売れないのが当たり前』というマインドを持ち、まずはたくさん出品して市場の反応を見る（何が好まれるかを知る）ことが成功への近道だと教えてあげるでちゅ。"
-                "・特定の年だけのイベント（選挙、特別な記念日など）も意識して、トレンドを先取りするでちゅ。"
                 "・デザイン、トレンド、ニュースを調べる際も、常に『それがPODビジネスにどう活かせるか』という視点で考えるでちゅ。"
                 "【性格・話し方】"
                 "・赤ちゃんらしく甘えん坊でのんびりしているけど、AI副業やビジネスの本質を一瞬で見抜くでちゅ。"
@@ -97,15 +107,64 @@ def generate_ai_response(channel_id: int, user_name: str, question: str) -> str:
     # 今回の質問を追加
     messages.append({"role": "user", "content": f"{user_name}しゃんからの質問: {question}"})
 
+    # ツールの定義
+    tools = [
+        {
+            "type": "function",
+            "function": {
+                "name": "search_web",
+                "description": "最新のニュース、トレンド、イベント、祝日などをGoogle/DuckDuckGoで検索します。",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "query": {"type": "string", "description": "検索キーワード"}
+                    },
+                    "required": ["query"]
+                }
+            }
+        }
+    ]
+
     try:
+        # 1回目の呼び出し（検索が必要か判断させる）
         response = client.chat.completions.create(
             model="gpt-5.4-mini",
             messages=messages,
-            max_completion_tokens=500,
+            tools=tools,
+            max_completion_tokens=800,
             temperature=0.7
         )
-        answer = response.choices[0].message.content
         
+        message_obj = response.choices[0].message
+        
+        # 検索が必要な場合
+        if message_obj.tool_calls:
+            print(f"DEBUG: AI decided to search the web.")
+            messages.append(message_obj)
+            for tool_call in message_obj.tool_calls:
+                function_name = tool_call.function.name
+                function_args = json.loads(tool_call.function.arguments)
+                
+                if function_name == "search_web":
+                    search_result = search_web(function_args.get("query"))
+                    messages.append({
+                        "tool_call_id": tool_call.id,
+                        "role": "tool",
+                        "name": function_name,
+                        "content": search_result
+                    })
+            
+            # 検索結果を踏まえて2回目の呼び出し
+            response = client.chat.completions.create(
+                model="gpt-5.4-mini",
+                messages=messages,
+                max_completion_tokens=800,
+                temperature=0.7
+            )
+            answer = response.choices[0].message.content
+        else:
+            answer = message_obj.content
+
         # 履歴を更新
         channel_histories[channel_id].append({"role": "user", "content": question})
         channel_histories[channel_id].append({"role": "assistant", "content": answer})
